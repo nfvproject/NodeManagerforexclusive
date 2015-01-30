@@ -1,0 +1,2 @@
+# NodeManagerforexclusive
+for exclusive node
