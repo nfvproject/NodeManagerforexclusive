@@ -28,9 +28,9 @@ from plcapi import PLCAPI
 
 from suds.client import Client
 from node_config import Node_Config
+import commands
 class NodeManager:
 
-    PLUGIN_PATH = "/usr/share/NodeManager/plugins"
 
     DB_FILE = "/var/lib/nodemanager/getslivers.pickle"
 
@@ -91,33 +91,9 @@ class NodeManager:
 
         # determine the modules to be run
         self.modules = NodeManager.core_modules
-        #['net', 'conf_files', 'sliverauth', 'vsys_privs', 'rawdisk', 'privatebridge', 
-        #'interfaces', 'hostmap', 'sfagids', 'syndicate', 'codemux', 'vsys', 
-        #'specialaccounts', 'omf_resctl', 'reservation']
-        plugins = []
-        self.modules += plugins
-        # Deal with plugins directory
-        '''
-        if os.path.exists(self.options.path):
-            sys.path.append(self.options.path)
-            plugins = [ os.path.split(os.path.splitext(x)[0])[1]
-                        for x in glob.glob( os.path.join(self.options.path,'*.py') )
-                        if not x.endswith("/__init__.py")
-                        ]
-            self.modules += plugins
-            
-        if self.options.user_module:
-            assert self.options.user_module in self.modules
-            self.modules=[self.options.user_module]
-            logger.verbose('nodemanager: Running single module %s'%self.options.user_module)
-        '''
-        logger.logslice("modules:%s"%self.modules,'/var/log/slice/module')
         node_config = Node_Config()
-        self.PEARL_DPID = node_config.PEARL_DPID
-        self.NODE_ID = node_config.NODE_ID
-        self.PEARL_API_URL = node_config.PEARL_API_URL
-        logger.log("PEARL API is %s"%self.PEARL_API_URL)
-        logger.log("node id is %s"%self.NODE_ID)
+        self.NODE_TYPE = node_config.NODE_TYPE
+        logger.log("node type is %s"%self.NODE_TYPE)
         # Init PEARL-API client
         try:
             self.pearl = Client(self.PEARL_API_URL)
@@ -139,6 +115,7 @@ class NodeManager:
                  #wangyang,what things do we need to focus on , add them here!After this ,we should delete the db file(*.pickle)
                  #wangyang,get vlanid from myplc,vlanid of slivers in one slice should be same 
                  #wangyang,get vip and vmac from myplc,vip and vmac of slivers in one slice should be different,just a global controller can make sure of this. 
+                    """
                     sliver_check = 0
                     for tag in sliver['attributes']:
                         if tag['tagname']=='vsys_vnet':
@@ -156,9 +133,9 @@ class NodeManager:
                     if sliver_check<3:
                         logger.logslice("*slice %s check failed,as no vlanid,vmac or vip"%slivers,logfile)
                         continue
+                    """
                     slices['slice_name'] = sliver['name']
                     slices['slice_id'] = sliver['slice_id']
-                    slices['vrname'] = 'vm_' + str(slices['slice_name'])
                     slices['status'] = 'none'
                     slices['port'] = 0
                     slices['keys'] = sliver['keys']
@@ -202,9 +179,10 @@ class NodeManager:
                           logger.logslice("keys: %s"%sliver['keys'],'/var/log/slice/key1')
                           logger.logslice("keys: %s"%sliverdb['keys'],'/var/log/slice/key2')
                           if sliverdb['keys'] != sliver['keys']:
-                              self.runassignsliver(sliverdb) # add by lihaitao, unassign all users, will update later
+                              oldkeys = sliverdb['keys']
                               sliverdb['keys'] = sliver['keys']
                               sliverdb['status'] = 'update'
+                              self.rupdatesliver(sliverdb,oldkeys)
                           else:
                               sliverdb['status'] = 'none'    
                           isnewslice = 0
@@ -232,7 +210,8 @@ class NodeManager:
                          self.rdeletesliver(sliver)
                          logger.log ("nodemanager: Create this Virtual Router next time")
                  elif sliver['status'] == 'update':
-                     self.rupdatesliver(sliver)
+                    #do nothing,this work has been done in function "handlemap()"
+                    pass
                  sliver['status'] = 'none'
              sliver = {}
         return slicemapdb
@@ -240,145 +219,41 @@ class NodeManager:
     def rcreatesliver(self,sliver,plc):
 
         sliver['vrname'] = 'vm_' + str(sliver['slice_name'])
-        #wangyangv2,get this from myplc
-        #sliver['vip'] = self.getvip()
-        #wangyangv2,get this from myplc
-        #sliver['vmac'] = self.getvmac()
-        #sliver['vlanid'] = self.getvlanid()
-        logfile = '/var/log/slice/log'
-        logger.logslice("(sliceid: %s,vrname: %s,vip: %s,vmac:%s,vlanid:%s)  create"%(sliver['slice_id'],sliver['vrname'],sliver['vip'],sliver['vmac'],sliver['vlanid']),logfile)
-        logger.log ("nodemanager: prepare to call router API,slice is %d - end"%sliver['slice_id'])
-        #call router API
-        logger.log ("nodemanager:factory.create")
-
-        vrp = self.pearl.factory.create('ns1:creatVirtualRouterParam')
-        #vrp.name = 'vm_slice' + str(sliver['slice_id'])
-        vrp.name = sliver['vrname']
-        vrp.memory = 1024*1024
-        vrp.currentMemory = vrp.memory
-        vrp.vcpu = 1
-        vrp.ip = sliver['vip']
-        vrp.mac = sliver['vmac']
-        vrp.disksize = 2
-        logger.log ("nodemanager:vrp is %s"%vrp)
-        logger.log ("nodemanager:prepare creatVirtualMachine")
-        """
-        # create vm, and start it, get the [ip:port]
-        self.pearl.service.creatVirtualMachine(vrp)
-            
-	logger.log ("nodemanager: Start Virtual Machine - begin")
-        vm=self.pearl.service.startVirtualMachine(vrp.name)
-        logger.log ("nodemanager: Start Virtual Machine - end")
-        ipport = vm.split(':')
-        sliver['port'] = ipport[1]
-	logger.log ("nodemanager: Create Virtual Machine, vm - %s,ip:port - %s:%s" %(vrp.name, ipport[0], ipport[1]))
-        plc_port={}
-	plc_port['sliver_port']=int(sliver['port'])
-	plc_slice={}
-	plc_slice['node_id']=self.NODE_ID
-	plc_slice['slice_id']=sliver['slice_id']
-	plc.ReportSliverPort(plc_port,plc_slice)
-	logger.log ("nodemanager: Report sliver port, node_id - %s,slice_id - %s,port - %s" %(self.NODE_ID,sliver['slice_id'], ipport[1]))
-
-        # update the user keys to vm
-        vmname = sliver['vrname']
-        vrname = 'vr_' + str(sliver['slice_name'])
-
-        for key in sliver['keys']:
-            #logger.log("nodemanager: keys %s"%(key['key']))
-            self.pearl.service.assignVirtualRouter(vrname, vmname, key['key'])
-        logger.log ("nodemanager: Assign Virtual Router for vm - %s, vr - %s" %(vmname, vrname))
-
-        vlanid = int(sliver['vlanid'])
-        pearl_config = self.loadPearlConfig()
-        logger.log ("nodemanager: Start Virtual Router vm - %s, vr - %s start" %(vmname, vrname))
-        self.pearl.service.startVirtualRouter(vrname, vmname, self.PEARL_DPID, vlanid, pearl_config)
-        logger.log ("nodemanager: Start Virtual Router vm - %s, vr - %s end" %(vmname, vrname))
-
-        """
-        flag = 0
-        try:
-            vk=self.pearl.service.creatVirtualMachine(vrp)
-            logger.log ("nodemanager: vk is %s"%vk)
-	    logger.log ("nodemanager: Start Virtual Machine - begin")
-            vm=self.pearl.service.startVirtualMachine(vrp.name)
-            logger.log ("nodemanager: Start Virtual Machine - end")
-            ipport = vm.split(':')
-            sliver['port'] = ipport[1]
-	    logger.log ("nodemanager: Create Virtual Machine, vm - %s,ip:port - %s:%s" %(vrp.name, ipport[0], ipport[1]))
-            plc_port={}
-	    plc_port['sliver_port']=int(sliver['port'])
-	    plc_slice={}
-	    plc_slice['node_id']=self.NODE_ID
-	    plc_slice['slice_id']=sliver['slice_id']
-	    plc.ReportSliverPort(plc_port,plc_slice)
-	    logger.log ("nodemanager: Report sliver port, node_id - %s,slice_id - %s,port - %s" %(self.NODE_ID,sliver['slice_id'], ipport[1]))
-
-            # update the user keys to vm
-            vmname = sliver['vrname']
-            vrname = 'vr_' + str(sliver['slice_name'])
-            for key in sliver['keys']:
-                #logger.log("nodemanager: keys %s"%(key['key']))
-                self.pearl.service.assignVirtualRouter(vrname, vmname, key['key'])
-            logger.log ("nodemanager: Assign Virtual Router for vm - %s, vr - %s" %(vmname, vrname))
-
-            vlanid = int(sliver['vlanid'])
-            pearl_config = self.loadPearlConfig()
-            logger.log ("nodemanager: Start Virtual Router vm - %s, vr - %s start" %(vmname, vrname))
-            self.pearl.service.startVirtualRouter(vrname, vmname, self.PEARL_DPID, vlanid, pearl_config)
-            flag =1
-            logger.log ("nodemanager: Start Virtual Router vm - %s, vr - %s end" %(vmname, vrname))
-        except Exception as e:
-            logger.log ("nodemanager: Create Virtual Router Error:", e)
-        if flag == 0:
-            logger.log ("nodemanager: Create Virtual Router Error:")
-            return 0
-        return 1
-    def rdeletesliver(self,sliver):
-        #self.updatevip(sliver['vip'])
-        #self.updatevmac(sliver['vmac'])
-        #self.updatevlanid(sliver['vlanid'])
-        logfile = '/var/log/slice/log'
-        #logger.logslice("rdeletesliver: sliceid-%s, vrouteid-%s, sliver['vip']-%s, sliver['vmac']-%s, sliver[vlanid]-%s"%(sliver['slice_id'], sliver['virouterid'], sliver['vip'], sliver['vmac'], sliver['vlanid']),logfile)
-        logger.logslice("(sliceid: %s,vrouteid: %s,vip: %s,vmac:%s,vlanid:%s)  delete"%(sliver['slice_id'],sliver['vrname'],sliver['vip'],sliver['vmac'],sliver['vlanid']),logfile)
-
-        #call router API
-        try:
-            vmname = sliver['vrname']
-            vrname = 'vr_' + str(sliver['slice_name'])
-
-            self.pearl.service.stopVirtualRouter(vrname, vmname)
-            logger.log ("nodemanager: Stop Virtual Router %s" %(vrname))
-
-            self.pearl.service.stopVirtualMachine(vmname)
-            logger.log ("nodemanager: Stop Virtual Machine %s" %(vmname))
-
-            dvrp = self.pearl.factory.create('ns1:destroyVirtualRouterParam')
-            dvrp.name = vmname
-            dvrp.ip = sliver['vip']
-            dvrp.mac = sliver['vmac']
-            self.pearl.service.destroyVirtualMachine(dvrp)
-            logger.log ("nodemanager: Destroy Virtual Machine %s" %(vmname))
-        except Exception as e:
-            logger.log ("nodemanager: Delete Virtual Router Error:", e)
+        logger.log ("nodemanager: prepare to create slice,slice is %d - end"%sliver['slice_id'])
+        flag = commands.getstatusoutput('useradd -m -s /bin/bash -p "%s" %s'%(sliver['slice_name'],sliver['slice_name']))
+        if (flag != 0):
+             logger.log ("nodemanager: Slice %s created failed ,already exists"%sliver['slice_name'])
         
-    def rupdatesliver(self,sliver):
+        self.rupdatesliver(sliver,oldkeys=[])
+        return 1
+    def addkeys(self,sliver,keys):
+        (flag,output) = commands.getstatusoutput('mkdir /home/%s/.ssh'%sliver['slice_name'])
+        (flag,output) = commands.getstatusoutput('touch /home/%s/.ssh/authorized_keys'%sliver['slice_name'])
+        (flag,output) = commands.getstatusoutput('chown %s:%s /home/%s/.ssh/authorized_keys'%(sliver['slice_name'],sliver['slice_name'],sliver['slice_name']))
+        (flag,output) = commands.getstatusoutput('chmod 600 /home/%s/.ssh/authorized_keys'%sliver['slice_name'])
+        for key in keys:
+            (flag,output)  = commands.getstatusoutput('echo "%s" >>/home/%s/.ssh/authorized_keys'%(key,sliver['slice_name']))
+ 
+    def rdeletesliver(self,sliver):
+        logger.log ("nodemanager: delete slice %s" %(sliver['slice_name']))
+        (flag,output)  = commands.getstatusoutput('userdel -fr %s'%sliver['slice_name'])
+        if (flag != 0):
+            logger.log ("nodemanager: Slice %s delete failed ,not exists"%sliver['slice_name'])
+        
+    def rupdatesliver(self,sliver,oldkeys):
         logfile = '/var/log/slice/log'
                 #logger.logslice("slicename: %s"%sliver['name'],logfile)    
         logger.logslice("sliceid: %s,vrouteid:  %s  update"%(sliver['slice_id'],sliver['vrname']),logfile)
         #call router API
         # update the user keys to vm
-        try:
-            vmname = sliver['vrname']
-            vrname = 'vr_' + str(sliver['slice_name'])
-            for key in sliver['keys']:
-                logger.logslice("vmname is %s,vrname is %s"%(vmname,vrname),'/var/log/slice/keyadd')
-                logger.logslice("Add key %s"%key['key'],'/var/log/slice/keyadd')
-                self.pearl.service.assignVirtualRouter(vrname, vmname, key['key'])
-            logger.log ("nodemanager: Update Virtual Router %s" %(vrname))
-        except Exception as e:
-            logger.log ("nodemanager: Update Virtual Router Error:", e)
-
+        file = open("/home/%s/.ssh/authorized_keys"%sliver['slice_name'])
+        allkeys = []
+        for line in file:
+            allkeys.append(line)
+        otherkeys = [val for val in allkeys if val not in oldkeys]
+        addkeys = otherkeys + sliver['keys']
+        (flag,output) = commands.getstatusoutput('rm -r /home/%s/.ssh'%sliver['slice_name'])
+        self.addkeys(sliver,addkeys)
     def GetSlivers(self, config, plc):
         """Retrieves GetSlivers at PLC and triggers callbacks defined in modules/plugins"""
         
