@@ -98,10 +98,13 @@ class NodeManager:
     def getslicemap(self,last_data):
         slicemap = {}
         slivers = []
-
+        #slivernum = 0
         try:
             for sliver in last_data['slivers']:
-                slices = {}
+ 		#slivernum += 1
+                #if self.NODE_TYPE == "exclusive" and slivernum >1:
+                #    return 0
+		slices = {}
                 if sliver['slice_id'] > 4:
                     logfile = '/var/log/slice/getmap'              
                     logger.logslice("---get slice %s from myplc"%sliver['slice_id'],logfile)
@@ -113,8 +116,12 @@ class NodeManager:
                     slices['status'] = 'none'
                     slices['port'] = 0
                     slices['keys'] = sliver['keys']
-                    slivers.append(slices)                      
-                    logger.logslice("---get slice %s successfully,"%slivers,logfile)
+                    if (slices['slice_id'] == 130):
+			#wangyang,just slice(name:ict_gateway   id =130) can be deployed on this node
+			slivers.append(slices)                      
+			logger.logslice("---get slice %s successfully,"%slivers,logfile)
+		    else:
+			logger.log("slice %s is forbidden to deploy on this node,"%slices['slice_name'])
             slicemap['slivers'] = slivers
             return slicemap
         except:
@@ -186,8 +193,9 @@ class NodeManager:
         logger.log ("command output:%s"%output)
         (flag,output) = commands.getstatusoutput('chmod 600 /home/%s/.ssh/authorized_keys'%sliver['slice_name'])
         logger.log ("command output:%s"%output)
-        for key in keys:
-            (flag,output)  = commands.getstatusoutput('echo "%s" >>/home/%s/.ssh/authorized_keys'%(key,sliver['slice_name']))
+        logger.log ("keys:%s"%keys)
+        for keydata in keys:
+            (flag,output)  = commands.getstatusoutput('echo "%s" >>/home/%s/.ssh/authorized_keys'%(keydata,sliver['slice_name']))
             logger.log ("command output:%s"%output)
  
     def rdeletesliver(self,sliver):
@@ -208,8 +216,15 @@ class NodeManager:
                 allkeys.append(line)
         except:
             pass
-        otherkeys = [val for val in allkeys if val not in oldkeys]
-        addkeys = otherkeys + sliver['keys']
+        newkey_list = []
+        oldkey_list = []
+        for key1 in sliver['keys']:
+   	    newkey_list.append(key1['key'])
+        for key2 in oldkeys:
+   	    oldkey_list.append(key2['key'])
+
+        otherkeys = [val for val in allkeys if val not in oldkey_list]
+        addkeys = otherkeys + newkey_list
         (flag,output) = commands.getstatusoutput('rm -r /home/%s/.ssh'%sliver['slice_name'])
         logger.log ("command output:%s"%output)
         self.addkeys(sliver,addkeys)
