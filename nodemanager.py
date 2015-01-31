@@ -26,7 +26,6 @@ import tools
 from config import Config
 from plcapi import PLCAPI
 
-from suds.client import Client
 from node_config import Node_Config
 import commands
 class NodeManager:
