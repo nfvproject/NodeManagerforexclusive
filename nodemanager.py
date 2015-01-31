@@ -31,7 +31,7 @@ from node_config import Node_Config
 import commands
 class NodeManager:
 
-
+    PLUGIN_PATH = "/usr/share/NodeManager/plugins"
     DB_FILE = "/var/lib/nodemanager/getslivers.pickle"
 
     MAP_FILE = "/var/lib/nodemanager/slicemap.pickle"
@@ -94,12 +94,6 @@ class NodeManager:
         node_config = Node_Config()
         self.NODE_TYPE = node_config.NODE_TYPE
         logger.log("node type is %s"%self.NODE_TYPE)
-        # Init PEARL-API client
-        try:
-            self.pearl = Client(self.PEARL_API_URL)
-            logger.log("Init PEARL-API Client")
-        except:
-            logger.log("Connect PEARL-API Client failed")
 
     #wangyang,get slice map from date fetched from myplc
     def getslicemap(self,last_data):
@@ -115,25 +109,6 @@ class NodeManager:
                  #wangyang,what things do we need to focus on , add them here!After this ,we should delete the db file(*.pickle)
                  #wangyang,get vlanid from myplc,vlanid of slivers in one slice should be same 
                  #wangyang,get vip and vmac from myplc,vip and vmac of slivers in one slice should be different,just a global controller can make sure of this. 
-                    """
-                    sliver_check = 0
-                    for tag in sliver['attributes']:
-                        if tag['tagname']=='vsys_vnet':
-                            slices['vlanid'] = tag['value']
-                            logger.logslice("*get vlanid %s "%slices['vlanid'],logfile)
-                            sliver_check += 1
-                        if tag['tagname']=='sliver_ip':
-                            slices['vip'] = tag['value']
-                            logger.logslice("*get vip %s "%slices['vip'],logfile)
-                            sliver_check += 1
-                        if tag['tagname']=='sliver_mac':
-                            slices['vmac'] = tag['value']
-                            logger.logslice("*get vmac %s "%slices['vmac'],logfile)
-                            sliver_check += 1
-                    if sliver_check<3:
-                        logger.logslice("*slice %s check failed,as no vlanid,vmac or vip"%slivers,logfile)
-                        continue
-                    """
                     slices['slice_name'] = sliver['name']
                     slices['slice_id'] = sliver['slice_id']
                     slices['status'] = 'none'
@@ -145,28 +120,6 @@ class NodeManager:
             return slicemap
         except:
             return slicemap
-    def loadPearlConfig(self):
-        pearl_conf_file = open(self.PEARL_DEFAULT_CONFIG)
-        pearl_confs = pearl_conf_file.readlines()
-        pearl_conf = ""
-        for conf in pearl_confs:
-            pearl_conf += conf
-        return pearl_conf
-
-    # add by lihaitao, unassign all users, will update later
-    def runassignsliver(self, sliver):
-        logfile = '/var/log/slice/log'
-        logger.logslice("sliceid: %s,vrouteid:  %s unassign "%(sliver['slice_id'],sliver['vrname']),logfile)
-        #call router API
-        # update the user keys to vm
-        try:
-            vmname = sliver['vrname']
-            vrname = 'vr_' + str(sliver['slice_name'])
-            for key in sliver['keys']:
-                self.pearl.service.unassignVirtualRouter(vmname, key['key'])
-            logger.log ("nodemanager: Unassign Virtual Router %s" %(vrname))
-        except Exception as e:
-            logger.log ("nodemanager: Unassign Virtual Router Error:", e)
 
     #wangyang,compare date from myplc and db,update status
     def handlemap(self,slicemap,slicemapdb):
@@ -218,7 +171,6 @@ class NodeManager:
     #wangyang,add,delete,update sliver to router,here just write log    
     def rcreatesliver(self,sliver,plc):
 
-        sliver['vrname'] = 'vm_' + str(sliver['slice_name'])
         logger.log ("nodemanager: prepare to create slice,slice is %d - end"%sliver['slice_id'])
         flag = commands.getstatusoutput('useradd -m -s /bin/bash -p "%s" %s'%(sliver['slice_name'],sliver['slice_name']))
         if (flag != 0):
