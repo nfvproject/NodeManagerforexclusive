@@ -201,10 +201,13 @@ class NodeManager:
                 #logger.logslice("slicename: %s"%sliver['name'],logfile)    
         #call router API
         # update the user keys to vm
-        file = open("/home/%s/.ssh/authorized_keys"%sliver['slice_name'])
         allkeys = []
-        for line in file:
-            allkeys.append(line)
+        try:
+            file = open("/home/%s/.ssh/authorized_keys"%sliver['slice_name'])
+            for line in file:
+                allkeys.append(line)
+        except:
+            pass
         otherkeys = [val for val in allkeys if val not in oldkeys]
         addkeys = otherkeys + sliver['keys']
         (flag,output) = commands.getstatusoutput('rm -r /home/%s/.ssh'%sliver['slice_name'])
