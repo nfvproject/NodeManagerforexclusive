@@ -171,30 +171,34 @@ class NodeManager:
     def rcreatesliver(self,sliver,plc):
 
         logger.log ("nodemanager: prepare to create slice,slice is %d - end"%sliver['slice_id'])
-        flag = commands.getstatusoutput('useradd -m -s /bin/bash -p "%s" %s'%(sliver['slice_name'],sliver['slice_name']))
-        if (flag != 0):
-             logger.log ("nodemanager: Slice %s created failed ,already exists"%sliver['slice_name'])
+        (flag,output)  = commands.getstatusoutput('useradd -m -s /bin/bash -p "%s" %s'%(sliver['slice_name'],sliver['slice_name']))
+        #if (flag != 0):
+        logger.log ("command output:"%output)
         
         self.rupdatesliver(sliver,oldkeys=[])
         return 1
     def addkeys(self,sliver,keys):
         (flag,output) = commands.getstatusoutput('mkdir /home/%s/.ssh'%sliver['slice_name'])
+        logger.log ("command output:"%output)
         (flag,output) = commands.getstatusoutput('touch /home/%s/.ssh/authorized_keys'%sliver['slice_name'])
+        logger.log ("command output:"%output)
         (flag,output) = commands.getstatusoutput('chown %s:%s /home/%s/.ssh/authorized_keys'%(sliver['slice_name'],sliver['slice_name'],sliver['slice_name']))
+        logger.log ("command output:"%output)
         (flag,output) = commands.getstatusoutput('chmod 600 /home/%s/.ssh/authorized_keys'%sliver['slice_name'])
+        logger.log ("command output:"%output)
         for key in keys:
             (flag,output)  = commands.getstatusoutput('echo "%s" >>/home/%s/.ssh/authorized_keys'%(key,sliver['slice_name']))
+        logger.log ("command output:"%output)
  
     def rdeletesliver(self,sliver):
         logger.log ("nodemanager: delete slice %s" %(sliver['slice_name']))
         (flag,output)  = commands.getstatusoutput('userdel -fr %s'%sliver['slice_name'])
-        if (flag != 0):
-            logger.log ("nodemanager: Slice %s delete failed ,not exists"%sliver['slice_name'])
+        logger.log ("command output:"%output)
+        #if (flag != 0):
+        #    logger.log ("nodemanager: Slice %s delete failed ,not exists"%sliver['slice_name'])
         
     def rupdatesliver(self,sliver,oldkeys):
-        logfile = '/var/log/slice/log'
                 #logger.logslice("slicename: %s"%sliver['name'],logfile)    
-        logger.logslice("sliceid: %s,vrouteid:  %s  update"%(sliver['slice_id'],sliver['vrname']),logfile)
         #call router API
         # update the user keys to vm
         file = open("/home/%s/.ssh/authorized_keys"%sliver['slice_name'])
@@ -204,6 +208,7 @@ class NodeManager:
         otherkeys = [val for val in allkeys if val not in oldkeys]
         addkeys = otherkeys + sliver['keys']
         (flag,output) = commands.getstatusoutput('rm -r /home/%s/.ssh'%sliver['slice_name'])
+        logger.log ("command output:"%output)
         self.addkeys(sliver,addkeys)
     def GetSlivers(self, config, plc):
         """Retrieves GetSlivers at PLC and triggers callbacks defined in modules/plugins"""
